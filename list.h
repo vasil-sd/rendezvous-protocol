@@ -1,11 +1,5 @@
-#ifndef __RENDEZVOUS_LIST__
-#define __RENDEZVOUS_LIST__
-
 namespace rendezvous
 {
-
-
-// Lockfree list specialized for rendezvous needs
 namespace list
 {
 
@@ -13,11 +7,14 @@ template<typename T, typename Typ = T>
 struct Element
 {
     T* volatile next;
-    Element() : next(nullptr) {}
+    Element() : next(nullptr)
+    {
+    }
+
 };
 
 template<typename T, typename Typ>
-class List
+class LockFreeList
 {
     T* volatile head;
     T* volatile tail;
@@ -25,14 +22,17 @@ class List
     static T* GetTail(T* h)
     {
         T* t = h;
-        while(t && t->Element<T, Typ>::next)
+        while (t && t->Element<T, Typ>::next)
         {
             t = t->Element<T, Typ>::next;
         }
         return t;
     }
+
 public:
-    List() : head(nullptr), tail(nullptr) {}
+    LockFreeList() : head(nullptr), tail(nullptr)
+    {
+    }
 
     T* GetHead() const
     {
@@ -45,71 +45,74 @@ public:
     }
 
     template<typename BWH, typename CASF>
-    void SetAtomic(BWH BusyWaitHandler, CASF CAS, List& l)
+    void SetAtomic(BWH           BusyWaitHandler,
+                   CASF          CAS,
+                   LockFreeList& l)
     {
-        T* t = l.tail;
+        T*  t = l.tail;
         head = l.head;
         int loopCount = 0;
-        while(!CAS(reinterpret_cast<void**>(const_cast<T**>(&l.tail)), t, nullptr))
+        while (!CAS(reinterpret_cast<void**>(const_cast<T**>(&l.tail)), t, nullptr))
         {
             BusyWaitHandler(loopCount);
             t = l.tail;
         }
-        tail = GetTail(t);
+        tail   = GetTail(t);
         l.head = nullptr;
     }
 
     template<typename BWH, typename CASF>
-    List AcquireAtomic(BWH BusyWaitHandler, CASF CAS)
+    LockFreeList AcquireAtomic(BWH  BusyWaitHandler,
+                               CASF CAS)
     {
-        List l;
-        if(tail)
+        LockFreeList l;
+        if (tail)
         {
-            T* t = tail;
+            T*  t = tail;
             int loopCount = 0;
-            while(!CAS(reinterpret_cast<void**>(const_cast<T**>(&tail)), t, nullptr))
+            while (!CAS(reinterpret_cast<void**>(const_cast<T**>(&tail)), t, nullptr))
             {
                 BusyWaitHandler(loopCount);
                 t = tail;
             }
             l.head = head;
-            head = nullptr;
+            head   = nullptr;
             l.tail = GetTail(t);
         }
         return l;
     }
 
     template<typename BWH, typename CASF>
-    void AddAtomic(BWH BusyWaitHandler, CASF CAS, T& elt)
+    void AddAtomic(BWH  BusyWaitHandler,
+                   CASF CAS,
+                   T  & elt)
     {
         elt.Element<T, Typ>::next = nullptr;
         int loopCount = 0;
-        while(true)
+        while (true)
         {
-            if(CAS(reinterpret_cast<void**>(const_cast<T**>(&tail)), nullptr, &elt))
+            if (CAS(reinterpret_cast<void**>(const_cast<T**>(&tail)), nullptr, &elt))
             {
                 int loopCount = 0;
-                while(!CAS(reinterpret_cast<void**>(const_cast<T**>(&head)), nullptr, &elt))
+                while (!CAS(reinterpret_cast<void**>(const_cast<T**>(&head)), nullptr, &elt))
                 {
                     BusyWaitHandler(loopCount);
                 }
                 return;
             }
             T* t = tail;
-            if(t && CAS(reinterpret_cast<void**>(const_cast<T**>(&t->Element<T, Typ>::next)), nullptr, &elt))
+            if (t && CAS(reinterpret_cast<void**>(const_cast<T**>(&t->Element<T, Typ>::next)), nullptr, &elt))
             {
-                // Somewhat complicated beacause of possibility of getting AcquireAtomic here
-                // so tail may suddenly become nullptr
                 CAS(reinterpret_cast<void**>(const_cast<T**>(&tail)), t, t->Element<T, Typ>::next);
                 return;
             }
             BusyWaitHandler(loopCount);
-       }
+        }
     }
 
-    void Append(List& l)
+    void Append(LockFreeList& l)
     {
-        if(tail)
+        if (tail)
         {
             tail->Element<T, Typ>::next = l.head;
             tail = GetTail(tail);
@@ -122,16 +125,16 @@ public:
     }
 
     template<typename Typ1>
-    void Remove(List<T, Typ1>& l)
+    void Remove(LockFreeList<T, Typ1>& l)
     {
-        T* h = head;
+        T* h    = head;
         T* prev = nullptr;
-        while(h)
+        while (h)
         {
             T* next = h->Element<T, Typ>::next;
-            if(l.Present(h))
+            if (l.Present(h))
             {
-                if(prev)
+                if (prev)
                 {
                     prev->Element<T, Typ>::next = next;
                 }
@@ -153,9 +156,9 @@ public:
     bool Search(F f)
     {
         T* h = head;
-        while(h)
+        while (h)
         {
-            if(f(*h))
+            if (f(*h))
             {
                 return true;
             }
@@ -167,23 +170,22 @@ public:
     template<typename F>
     void Iterate(F f)
     {
-        Search([&f](T& t)
-               {
-                   f(t);
-                   return false;
-               });
+        Search([ &f ] (T& t)
+                        {
+                            f(t);
+                            return false;
+                        });
     }
 
     bool Present(T* elt)
     {
-        return Search([&elt](auto& t)
-                      {
-                          return elt == &t;
-                      });
+        return Search([ &elt ] (auto& t)
+                        {
+                            return elt == &t;
+                        });
     }
+
 };
 
-}                        // end of namespace list
-}                        // end of namespace rendezvous
-
-#endif // __RENDEZVOUS_LIST__
+}
+}

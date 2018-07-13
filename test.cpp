@@ -15,7 +15,7 @@ struct R1
 namespace
 {
 
-struct RCfg : public rendezvous::DefaultAtomicConfig
+struct RCfg : public rendezvous::DefAtomicCfg
 {
     static void BusyWaitHandler(int& i)
     {
@@ -235,7 +235,7 @@ RunRendezTestAsync(int n,
     {
         i = 0;
         sum[ j ] = 1;
-        threads.push_back(std::thread(RFunc, m, n, &i, &sum[ j ]));
+        threads.push_back(std::thread(RFuncAsync, m, n, &i));
         ++j;
     }
     for (auto &t : threads)
@@ -250,8 +250,8 @@ int main()
 {
     for (int i = 0; i < 10000; i++)
     {
-        int     n = 1 + std::rand() % 10000;
-        int     m = 2 + std::rand() % 50;
+        int     n = 1 + std::rand() % 1000;
+        int     m = 2 + std::rand() % 4;
         fprintf(stderr, "Rendezvous test #%03d : threads = %d, iterations = %d, usec = ...", i, m, n);
         auto    start = std::chrono::high_resolution_clock::now();
         if(!RunRendezTest(n, m))
